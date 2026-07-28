@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: perfectdev-bot
+    env: node
+    plan: starter
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: MONGODB_URI
+      - key: TELEGRAM_TOKEN
+      - key: TELEGRAM_WEBHOOK_URL
+      - key: MISTRAL_API_KEY
+      - key: DEEPSEEK_API_KEY
+      - key: DASHSCOPE_API_KEY
+      - key: NODE_ENV
