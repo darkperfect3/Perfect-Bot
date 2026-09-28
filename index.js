@@ -82,6 +82,14 @@ const qwen = new OpenAI({
         'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
 });
 
+bot.on('polling_error', (error) => {
+    console.error('⚠️ Telegram polling_error :', error?.message || error);
+});
+
+bot.on('webhook_error', (error) => {
+    console.error('⚠️ Telegram webhook_error :', error?.message || error);
+});
+
 // Mémoire temporaire
 const conversations = {};
 
@@ -228,6 +236,32 @@ bot.onText(/\/clear/, async (msg) => {
 // IA PRINCIPALE
 // ========================================
 
+function getFallbackAnswer() {
+    return '⚠️ Tous les fournisseurs IA sont actuellement indisponibles ou à court de crédit. Réessaie dans quelques minutes, ou configure une autre clé API valide.';
+}
+
+function notifyAdminOfAiFailure(context = '') {
+    const message = `⚠️ Notification système\n\nTous les modèles IA sont expirés, désactivés ou à court de crédit.\nDétail: ${context || 'Aucun détail fournisseur disponible'}\n\nLe bot reste en ligne, mais les réponses IA sont actuellement indisponibles.`;
+
+    if (!process.env.TELEGRAM_ADMIN_CHAT_ID) {
+        console.warn('⚠️ TELEGRAM_ADMIN_CHAT_ID non configuré ; notification non envoyée.');
+        return;
+    }
+
+    bot.sendMessage(process.env.TELEGRAM_ADMIN_CHAT_ID, message)
+        .then(() => {
+            console.log('✅ Notification admin IA envoyée.');
+        })
+        .catch((error) => {
+            console.error('❌ Impossible d’envoyer la notification admin IA :', error?.message || error);
+        });
+}
+
+function getErrorMessage(error) {
+    const message = error?.message || String(error || 'Erreur inconnue');
+    return message;
+}
+
 async function generateResponse(messages) {
 
     // =====================
@@ -265,13 +299,11 @@ async function generateResponse(messages) {
         };
 
     } catch (mistralError) {
-
         console.error(
             '❌ Mistral indisponible'
         );
-
         console.error(
-            mistralError.message
+            getErrorMessage(mistralError)
         );
     }
 
@@ -311,13 +343,11 @@ async function generateResponse(messages) {
         };
 
     } catch (qwenError) {
-
         console.error(
             '❌ Qwen indisponible'
         );
-
         console.error(
-            qwenError.message
+            getErrorMessage(qwenError)
         );
     }
 
@@ -358,19 +388,24 @@ async function generateResponse(messages) {
         };
 
     } catch (deepseekError) {
-
         console.error(
             '❌ DeepSeek indisponible'
         );
-
         console.error(
-            deepseekError.message
+            getErrorMessage(deepseekError)
         );
     }
 
-    throw new Error(
-        'Toutes les IA sont indisponibles'
+    const failureContext = 'Mistral 429 / Qwen 403 / DeepSeek 402';
+    console.warn(
+        '⚠️ Aucune IA disponible pour le moment. Retour d’un message de secours.'
     );
+    notifyAdminOfAiFailure(failureContext);
+
+    return {
+        provider: 'fallback',
+        answer: getFallbackAnswer(),
+    };
 }
 
 bot.on('message', async (msg) => {
@@ -411,10 +446,10 @@ bot.on('message', async (msg) => {
                 conversations[userId]
             );
 
-        const answer = result.answer;
+        const answer = result?.answer || getFallbackAnswer();
 
         console.log(
-            `🤖 Réponse finale générée par : ${result.provider}`
+            `🤖 Réponse finale générée par : ${result?.provider || 'fallback'}`
         );
 
         // Sauvegarde MongoDB
